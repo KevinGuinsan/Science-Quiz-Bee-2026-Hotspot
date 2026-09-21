@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Science 7 Quiz Bee Host</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f6f9; color: #333; display: flex; justify-content: center; align-items: flex-start; padding: 20px; min-height: 100vh; }
+    .layout-grid { display: grid; grid-template-columns: 280px 1fr; gap: 20px; width: 100%; max-width: 1100px; }
+    .card { background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 20px; }
+    h1 { font-size: 1.4rem; color: #1a252f; margin-bottom: 10px; }
+    .room-box { background: #eef2f5; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.2rem; margin-bottom: 15px; color: #2c3e50; }
+    #qrcode { display: flex; justify-content: center; margin-bottom: 15px; }
+    .timer-display { font-size: 2.2rem; font-weight: bold; text-align: center; color: #e74c3c; margin: 15px 0; font-family: monospace; }
+    .badge { background-color: #3498db; color: #fff; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+    .question-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .question-text { font-size: 1.15rem; font-weight: 600; color: #2c3e50; margin-bottom: 15px; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+    .option-btn { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 15px; font-size: 0.95rem; text-align: left; opacity: 0.6; cursor: not-allowed; }
+    .option-btn.active { opacity: 1; cursor: pointer; }
+    .controls { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn { padding: 10px 18px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s ease; }
+    .btn-timer { background: #e67e22; color: white; }
+    .btn-timer:hover { background: #d35400; }
+    .btn-primary { background: #27ae60; color: white; }
+    .btn-primary:hover { background: #219150; }
+    .btn-secondary { background: #95a5a6; color: white; }
+    .btn-export { background: #10b981; color: white; width: 100%; margin-top: 15px; padding: 10px; font-size: 0.9rem; }
+    .btn-export:hover { background: #059669; }
+    .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .leaderboard-table th, .leaderboard-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 0.9rem; }
+    .leaderboard-table th { background-color: #f8fafc; color: #64748b; }
+    .status-correct { color: #16a34a; font-weight: bold; }
+    .status-wrong { color: #dc2626; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="layout-grid">
+    <div class="card">
+      <h1>Quiz Bee Room</h1>
+      <div id="room-code-display" class="room-box">CODE: ----</div>
+      <div id="qrcode"></div>
+      
+      <h2 style="font-size: 1.1rem; margin-top: 15px;">Live Standings</h2>
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Section</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body">
+          <tr><td colspan="3" style="text-align:center; color:#94a3b8;">Waiting for players...</td></tr>
+        </tbody>
+      </table>
+
+      <button id="export-csv-btn" class="btn btn-export">📥 Export Detailed CSV</button>
+    </div>
+
+    <div class="card">
+      <header style="display:flex; justify-content: space-between; align-items:center; border-bottom:2px solid #eef2f5; padding-bottom:10px; margin-bottom:15px;">
+        <h2>Science 7 Host View</h2>
+        <span id="category-badge" class="badge">EASY (10s)</span>
+      </header>
+
+      <div class="question-card">
+        <div id="question-text" class="question-text">Loading question...</div>
+        <div id="options-container" class="options-grid"></div>
+      </div>
+
+      <div id="timer-display" class="timer-display">10.00s</div>
+
+      <div class="controls">
+        <button id="start-timer-btn" class="btn btn-timer">Start Timer & Allow Answers</button>
+        <button id="prev-btn" class="btn btn-secondary">Previous</button>
+        <button id="next-btn" class="btn btn-primary">Next Question</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getSanitizedQuestionForClient, verifyAnswer, questions } from './questions.js';
+
+    let currentIndex = 0;
+    let timerInterval = null;
+    let roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+    
+    let players = {};
+    let submittedAnswers = {};
+    let playerResults = {};
+    let phoneConnections = [];
+
+    const roomCodeEl = document.getElementById('room-code-display');
+    const qrContainer = document.getElementById('qrcode');
+    const questionTextEl = document.getElementById('question-text');
+    const optionsContainerEl = document.getElementById('options-container');
+    const categoryBadgeEl = document.getElementById('category-badge');
+    const timerDisplayEl = document.getElementById('timer-display');
+    const startTimerBtn = document.getElementById('start-timer-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const prevBtn = document.getElementById('prev-btn');
+    const leaderboardBody = document.getElementById('leaderboard-body');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+
+    roomCodeEl.textContent = `CODE: ${roomCode}`;
+    const playerJoinUrl = new URL(`../player.html?room=${roomCode}`, window.location.href).href;
+    new QRCode(qrContainer, { text: playerJoinUrl, width: 120, height: 120 });
+
+    const channel = new BroadcastChannel(`qb_channel_${roomCode}`);
+    channel.onmessage = (e) => handleIncomingMessage(e.data);
+
+    const peer = new Peer(`qb_host_${roomCode}`);
+    peer.on('connection', (conn) => {
+      phoneConnections.push(conn);
+      conn.on('data', (data) => handleIncomingMessage(data));
+      conn.on('open', () => dispatchCurrentQuestion());
+    });
+
+    function broadcastPayload(payload) {
+      channel.postMessage(payload);
+      phoneConnections.forEach(conn => {
+        if (conn.open) conn.send(payload);
+      });
+    }
+
+    function handleIncomingMessage(msg) {
+      if (msg.type === 'PLAYER_JOIN') {
+        const pid = msg.player.uuid;
+        players[pid] = {
+          uuid: pid,
+          name: msg.player.name,
+          section: msg.player.section,
+          score: players[pid] ? players[pid].score : 0,
+          categoryScores: players[pid] ? players[pid].categoryScores : {
+            "Easy": 0, "Moderate": 0, "Difficult": 0, "Clincher": 0
+          },
+          itemScores: players[pid] ? players[pid].itemScores : {}
+        };
+        updateLeaderboardUI();
+        dispatchCurrentQuestion();
+      } else if (msg.type === 'SUBMIT_ANSWER') {
+        submittedAnswers[msg.uuid] = msg.answer;
+      }
+    }
+
+    function dispatchCurrentQuestion() {
+      const qData = getSanitizedQuestionForClient(currentIndex);
+      if (!qData) return;
+
+      const clientPayload = {
+        question: qData.question,
+        options: qData.options || null,
+        type: qData.type === 'MULTIPLE_CHOICE' ? 'mc' : 'text',
+        timer: qData.timeLimit || 10,
+        round: qData.category ? `${qData.category} Round` : 'Easy Round'
+      };
+
+      broadcastPayload({
+        type: 'QUESTION_DISPATCH',
+        question: clientPayload,
+        leaderboard: players
+      });
+    }
+
+    function renderQuestion(index) {
+      clearInterval(timerInterval);
+      submittedAnswers = {};
+      playerResults = {};
+      updateLeaderboardUI();
+
+      const qData = getSanitizedQuestionForClient(index);
+      if (!qData) return;
+
+      categoryBadgeEl.textContent = `${qData.category} (${qData.timeLimit}s)`;
+      questionTextEl.textContent = `${index + 1}. ${qData.question}`;
+      timerDisplayEl.textContent = `${qData.timeLimit.toFixed(2)}s`;
+      optionsContainerEl.innerHTML = '';
+
+      if (qData.type === 'MULTIPLE_CHOICE') {
+        qData.options.forEach((opt) => {
+          const btn = document.createElement('button');
+          btn.className = 'option-btn';
+          btn.textContent = opt;
+          optionsContainerEl.appendChild(btn);
+        });
+      } else if (qData.type === 'IDENTIFICATION') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.disabled = true;
+        input.placeholder = 'Students will type answer when timer starts...';
+        input.style.cssText = 'width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px;';
+        optionsContainerEl.appendChild(input);
+      }
+
+      dispatchCurrentQuestion();
+    }
+
+    function evaluateRoundAnswers() {
+      const fullQ = questions[currentIndex];
+      if (!fullQ) return;
+
+      playerResults = {};
+      const catKey = fullQ.category || "Easy";
+      const itemKey = `Q${currentIndex + 1}`;
+
+      // Helper: Find numeric option index (0, 1, 2, 3) from option string or index
+      function getOptionIndex(val) {
+        if (val === null || val === undefined) return -1;
+        if (typeof val === 'number') return val;
+        
+        // If val is numeric string like "2"
+        if (!isNaN(Number(val)) && Number(val) >= 0 && Number(val) < (fullQ.options || []).length) {
+          return Number(val);
+        }
+
+        const strVal = String(val).trim().toLowerCase();
+        
+        // Check exact match in options array
+        if (Array.isArray(fullQ.options)) {
+          const foundIdx = fullQ.options.findIndex(opt => String(opt).trim().toLowerCase() === strVal);
+          if (foundIdx !== -1) return foundIdx;
+        }
+
+        // Check letter code A, B, C, D
+        if (strVal.length === 1 && strVal >= 'a' && strVal <= 'd') {
+          return strVal.charCodeAt(0) - 97;
+        }
+
+        return -1;
+      }
+
+      // 1. Calculate correct answer's numeric index (0, 1, 2, 3)
+      const correctIdx = getOptionIndex(fullQ.answer);
+
+      Object.keys(players).forEach(pid => {
+        const ans = submittedAnswers[pid];
+        let isCorrect = false;
+
+        if (ans !== undefined && ans !== null) {
+          // If player submitted an option index number or string
+          const submittedIdx = getOptionIndex(ans);
+          if (fullQ.type === 'MULTIPLE_CHOICE' && correctIdx !== -1 && submittedIdx !== -1) {
+            isCorrect = (submittedIdx === correctIdx);
+          } else {
+            isCorrect = verifyAnswer(currentIndex, ans);
+          }
+        }
+
+        const ptsEarned = isCorrect ? (fullQ.points || 1) : 0;
+
+        if (isCorrect) {
+          players[pid].score += ptsEarned;
+          if (!players[pid].categoryScores[catKey]) players[pid].categoryScores[catKey] = 0;
+          players[pid].categoryScores[catKey] += ptsEarned;
+        }
+
+        if (!players[pid].itemScores) players[pid].itemScores = {};
+        players[pid].itemScores[itemKey] = ptsEarned;
+
+        playerResults[pid] = { isCorrect: isCorrect, submitted: ans };
+      });
+
+      updateLeaderboardUI();
+
+      // Broadcast numeric index to player.html so it highlights green correctly
+      broadcastPayload({
+        type: 'TIME_UP',
+        correctAnswer: (fullQ.type === 'MULTIPLE_CHOICE') ? correctIdx : fullQ.answer,
+        questionType: fullQ.type === 'MULTIPLE_CHOICE' ? 'mc' : 'text',
+        leaderboard: players
+      });
+    }
+
+    startTimerBtn.addEventListener('click', () => {
+      const qData = getSanitizedQuestionForClient(currentIndex);
+      const durationMs = qData.timeLimit * 1000;
+      const endTime = Date.now() + durationMs;
+      submittedAnswers = {};
+      playerResults = {};
+      updateLeaderboardUI();
+
+      document.querySelectorAll('.option-btn').forEach(btn => btn.classList.add('active'));
+      const textInput = optionsContainerEl.querySelector('input');
+      if (textInput) textInput.disabled = false;
+
+      const clientPayload = {
+        question: qData.question,
+        options: qData.options || null,
+        type: qData.type === 'MULTIPLE_CHOICE' ? 'mc' : 'text',
+        timer: qData.timeLimit || 10,
+        round: qData.category ? `${qData.category} Round` : 'Easy Round'
+      };
+
+      broadcastPayload({
+        type: 'START_TIMER',
+        question: clientPayload,
+        endTime: endTime,
+        duration: qData.timeLimit
+      });
+
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const remaining = Math.max(0, endTime - Date.now());
+        timerDisplayEl.textContent = `${(remaining / 1000).toFixed(2)}s`;
+
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          timerDisplayEl.textContent = "0.00s (TIME'S UP)";
+          document.querySelectorAll('.option-btn').forEach(btn => btn.classList.remove('active'));
+          if (textInput) textInput.disabled = true;
+          evaluateRoundAnswers();
+        }
+      }, 30);
+    });
+
+    function updateLeaderboardUI() {
+      const sorted = Object.values(players).sort((a, b) => b.score - a.score);
+      leaderboardBody.innerHTML = '';
+      
+      if (sorted.length === 0) {
+        leaderboardBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Waiting for players...</td></tr>`;
+        return;
+      }
+
+      sorted.forEach(p => {
+        const resText = playerResults[p.uuid] 
+          ? (playerResults[p.uuid].isCorrect ? '<span class="status-correct">✓ Correct</span>' : '<span class="status-wrong">✗ Wrong</span>')
+          : '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><b>${p.name}</b></td><td>${p.section}</td><td><b>${p.score} pts</b> ${resText}</td>`;
+        leaderboardBody.appendChild(tr);
+      });
+    }
+
+    exportCsvBtn.addEventListener('click', () => {
+      const playerList = Object.values(players);
+      if (playerList.length === 0) {
+        alert("No player scores available to export.");
+        return;
+      }
+
+      const questionHeaders = questions.map((_, idx) => `Q${idx + 1}`).join(",");
+
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += `Full Name,Section,Total Score,Easy Round,Moderate Round,Difficult Round,Clincher Round,${questionHeaders}\n`;
+
+      playerList.forEach(p => {
+        const easy = p.categoryScores ? (p.categoryScores["Easy"] || 0) : 0;
+        const mod = p.categoryScores ? (p.categoryScores["Moderate"] || 0) : 0;
+        const diff = p.categoryScores ? (p.categoryScores["Difficult"] || 0) : 0;
+        const clincher = p.categoryScores ? (p.categoryScores["Clincher"] || 0) : 0;
+
+        const itemScoresList = questions.map((_, idx) => {
+          const itemKey = `Q${idx + 1}`;
+          return (p.itemScores && p.itemScores[itemKey] !== undefined) ? p.itemScores[itemKey] : 0;
+        }).join(",");
+
+        csvContent += `"${p.name}","${p.section}",${p.score},${easy},${mod},${diff},${clincher},${itemScoresList}\n`;
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Science7_Detailed_Scores_${roomCode}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentIndex < questions.length - 1) {
+        currentIndex++;
+        renderQuestion(currentIndex);
+      }
+    });
+
+    prevBtn.addEventListener('click', () => {
+      if (currentIndex > 0) {
+        currentIndex--;
+        renderQuestion(currentIndex);
+      }
+    });
+
+    renderQuestion(currentIndex);
+  </script>
+</body>
+</html>

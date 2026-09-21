@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Bee Player</title>
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+<style>
+body{
+    margin:0;
+    padding:20px;
+    background:#282c34;
+    color:white;
+    font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;
+    text-align:center;
+}
+
+.card{
+    max-width:500px;
+    margin:auto;
+    background:#3b4049;
+    padding:20px;
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,.3);
+}
+
+input[type=text]{
+    width:90%;
+    padding:12px;
+    margin:8px 0;
+    border:none;
+    border-radius:8px;
+    font-size:16px;
+}
+
+.btn{
+    width:100%;
+    padding:14px;
+    margin:6px 0;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    background:#61dafb;
+    color:#222;
+    font-weight:bold;
+    font-size:17px;
+    transition:.2s;
+}
+
+.btn:hover{
+    transform:scale(1.02);
+}
+
+.btn.selected{
+    background:#0d6efd;
+    color:white;
+}
+
+.btn:disabled{
+    background:#666;
+    color:#ccc;
+    cursor:not-allowed;
+}
+
+.info{
+    background:#20232a;
+    padding:10px;
+    border-radius:8px;
+    margin-bottom:15px;
+    color:#61dafb;
+    font-weight:bold;
+}
+
+.timer{
+    font-size:22px;
+    font-weight:bold;
+    color:#ff6b6b;
+}
+
+.bar-bg{
+    width:100%;
+    background:#20232a;
+    height:12px;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:10px;
+}
+
+.bar-fill{
+    width:100%;
+    height:100%;
+    background:#28a745;
+    transition:width 1s linear;
+}
+
+#question{
+    margin:20px 0;
+    font-size:22px;
+}
+
+ul{
+    list-style:none;
+    padding:0;
+}
+
+li{
+    display:flex;
+    justify-content:space-between;
+    background:#20232a;
+    padding:10px;
+    margin:6px 0;
+    border-radius:8px;
+}
+
+.correct{
+    background:#28a745;
+    padding:12px;
+    border-radius:8px;
+    margin-bottom:15px;
+    font-weight:bold;
+}
+
+.wrong{
+    background:#dc3545;
+    padding:12px;
+    border-radius:8px;
+    margin-bottom:15px;
+    font-weight:bold;
+}
+
+.hidden{
+    display:none;
+}
+
+.rank{
+    font-size:24px;
+    font-weight:bold;
+    margin-bottom:15px;
+}
+</style>
+</head>
+<body>
+
+<!-- JOIN -->
+<div class="card" id="joinScreen">
+    <h2>Join Quiz Bee</h2>
+
+    <input type="text" id="roomCode" placeholder="Room Code">
+    <input type="text" id="playerName" placeholder="Name">
+    <input type="text" id="playerSection" placeholder="Section">
+
+    <button class="btn" onclick="joinGame()">Join Room</button>
+</div>
+
+<!-- WAITING -->
+<div class="card hidden" id="waitingScreen">
+    <h2 id="waitingText">Connecting...</h2>
+    <p>Waiting for host...</p>
+</div>
+
+<!-- QUESTION -->
+<div class="card hidden" id="questionScreen">
+
+    <div class="info" id="roundInfo">
+        ROUND
+    </div>
+
+    <div class="timer">
+        ⏱️ <span id="timerText">10</span>s
+    </div>
+
+    <div class="bar-bg">
+        <div class="bar-fill" id="timerBar"></div>
+    </div>
+
+    <h3 id="question">
+        Waiting...
+    </h3>
+
+    <div id="options"></div>
+
+</div>
+
+<!-- SCORE -->
+<div class="card hidden" id="scoreScreen">
+
+    <div id="feedback"></div>
+
+    <h3 id="scoreText">
+        Score: 0
+    </h3>
+
+    <h4>Leaderboard</h4>
+
+    <ul id="leaderboard"></ul>
+
+</div>
+
+<!-- END -->
+<div class="card hidden" id="endScreen">
+
+    <div class="rank" id="rankText"></div>
+
+    <h2 id="finalScore">
+        Final Score
+    </h2>
+
+    <ul id="finalLeaderboard"></ul>
+
+</div>
+
+<script>
+
+let peer = null;
+let conn = null;
+
+let roomCode = "";
+let playerName = "";
+let playerSection = "";
+
+let isTimeUp = false;
+let reconnectTimer = null;
+let currentDuration = 10;
+
+const uid = localStorage.getItem("qb_uid")
+ || crypto.randomUUID();
+
+localStorage.setItem("qb_uid", uid);
+
+function showScreen(id){
+
+    [
+        "joinScreen",
+        "waitingScreen",
+        "questionScreen",
+        "scoreScreen",
+        "endScreen"
+    ].forEach(screen=>{
+        document.getElementById(screen).classList.add("hidden");
+    });
+
+    document.getElementById(id).classList.remove("hidden");
+}
+
+function joinGame(){
+
+    roomCode =
+        document.getElementById("roomCode").value.trim().toUpperCase();
+
+    playerName =
+        document.getElementById("playerName").value.trim();
+
+    playerSection =
+        document.getElementById("playerSection").value.trim();
+
+    if(!roomCode || !playerName){
+        alert("Enter room code and player name.");
+        return;
+    }
+
+    connectToHost();
+}
+
+function scheduleReconnect(){
+
+    if(reconnectTimer) return;
+
+    reconnectTimer = setTimeout(()=>{
+        reconnectTimer = null;
+        connectToHost();
+    },2000);
+}
+
+function connectToHost(){
+
+    showScreen("waitingScreen");
+
+    document.getElementById("waitingText").innerText =
+        "Connecting...";
+
+    if(peer){
+        try{
+            peer.destroy();
+        }catch(e){}
+    }
+
+    peer = new Peer();
+
+    peer.on("open", ()=>{
+
+        conn = peer.connect(roomCode);
+
+        conn.on("open", ()=>{
+
+            conn.send({
+                type:"join",
+                uid,
+                name:playerName,
+                section:playerSection
+            });
+
+            document.getElementById("waitingText").innerText =
+                "Connected!";
+        });
+
+        conn.on("data", handleMessage);
+
+        conn.on("close", scheduleReconnect);
+        conn.on("error", scheduleReconnect);
+
+    });
+
+    peer.on("error", scheduleReconnect);
+}
+
+function handleMessage(data){
+
+    switch(data.type){
+
+        case "question":
+            showQuestion(data);
+            break;
+
+        case "tick":
+            updateTimer(data.time);
+            break;
+
+        case "timeout":
+            lockInputs();
+            break;
+
+        case "scoreboard":
+            showScoreboard(data);
+            break;
+
+        case "end":
+            showEnd(data);
+            break;
+    }
+}
+
+function showQuestion(data){
+
+    showScreen("questionScreen");
+
+    isTimeUp = false;
+
+    document.getElementById("roundInfo").innerText =
+        `${data.round || "ROUND"} • ${data.points || 1} PTS`;
+
+    document.getElementById("question").innerText =
+        data.question || "";
+
+    currentDuration = data.duration || 10;
+
+    updateTimer(currentDuration);
+
+    const container =
+        document.getElementById("options");
+
+    container.innerHTML = "";
+
+    if(data.qType === "text"){
+
+        const input =
+            document.createElement("input");
+
+        input.type = "text";
+        input.placeholder = "Type answer";
+
+        let debounce;
+
+        input.addEventListener("input", ()=>{
+
+            if(isTimeUp) return;
+
+            clearTimeout(debounce);
+
+            debounce = setTimeout(()=>{
+
+                if(conn && conn.open){
+
+                    conn.send({
+                        type:"answer",
+                        option:input.value.trim()
+                    });
+
+                }
+
+            },250);
+
+        });
+
+        container.appendChild(input);
+
+    }else{
+
+        const letters = ["A","B","C","D"];
+
+        (data.options || []).forEach((option,index)=>{
+
+            const btn =
+                document.createElement("button");
+
+            btn.className = "btn";
+
+            btn.innerText =
+                `${letters[index]}. ${option}`;
+
+            btn.onclick = ()=>{
+
+                if(isTimeUp) return;
+
+                document
+                    .querySelectorAll("#options .btn")
+                    .forEach(b=>b.classList.remove("selected"));
+
+                btn.classList.add("selected");
+
+                if(conn && conn.open){
+
+                    conn.send({
+                        type:"answer",
+                        option:index
+                    });
+
+                }
+
+            };
+
+            container.appendChild(btn);
+
+        });
+    }
+}
+
+function updateTimer(seconds){
+
+    const timer =
+        document.getElementById("timerText");
+
+    const bar =
+        document.getElementById("timerBar");
+
+    timer.innerText = seconds;
+
+    const percent =
+        (seconds/currentDuration) * 100;
+
+    bar.style.width = percent + "%";
+
+    if(seconds <= 3){
+        bar.style.background="#dc3545";
+    }
+    else if(seconds <= 5){
+        bar.style.background="#fd7e14";
+    }
+    else{
+        bar.style.background="#28a745";
+    }
+}
+
+function lockInputs(){
+
+    isTimeUp = true;
+
+    document
+        .querySelectorAll("#options button")
+        .forEach(btn=>btn.disabled=true);
+
+    const input =
+        document.querySelector("#options input");
+
+    if(input){
+        input.disabled = true;
+    }
+
+    updateTimer(0);
+}
+
+function showScoreboard(data){
+
+    showScreen("scoreScreen");
+
+    const feedback =
+        document.getElementById("feedback");
+
+    feedback.className =
+        data.isCorrect ? "correct" : "wrong";
+
+    feedback.innerHTML =
+        data.isCorrect
+        ? "✅ Correct!"
+        : `❌ Incorrect<br><small>Correct Answer: ${data.correctAnswerText || ""}</small>`;
+
+    const leaderboard =
+        document.getElementById("leaderboard");
+
+    leaderboard.innerHTML = "";
+
+    (data.leaderboard || []).forEach((player,index)=>{
+
+        const li =
+            document.createElement("li");
+
+        li.innerHTML =
+            `<span>${index+1}. ${player.name}</span>
+             <span>${player.score}</span>`;
+
+        leaderboard.appendChild(li);
+
+    });
+
+}
+
+function showEnd(data){
+
+    showScreen("endScreen");
+
+    const board =
+        data.leaderboard || [];
+
+    const rank =
+        board.findIndex(
+            p=>p.name===playerName
+        );
+
+    document.getElementById("rankText").innerText =
+        rank >= 0
+        ? `Finished #${rank+1}`
+        : "Quiz Finished";
+
+    if(rank === 0 && typeof confetti === "function"){
+
+        confetti({
+            particleCount:150,
+            spread:90
+        });
+
+    }
+
+    const myData =
+        board.find(
+            p=>p.name===playerName
+        );
+
+    document.getElementById("finalScore").innerText =
+        `Final Score: ${myData?.score || 0}`;
+
+    const finalList =
+        document.getElementById("finalLeaderboard");
+
+    finalList.innerHTML = "";
+
+    board.forEach((player,index)=>{
+
+        const li =
+            document.createElement("li");
+
+        li.innerHTML =
+            `<span>${index+1}. ${player.name}</span>
+             <span>${player.score}</span>`;
+
+        finalList.appendChild(li);
+
+    });
+
+}
+
+</script>
+</body>
+</html>

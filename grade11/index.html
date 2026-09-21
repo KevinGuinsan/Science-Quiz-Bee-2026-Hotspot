@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grade 11 Science Quiz Bee Controller</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f6f9; color: #333; display: flex; justify-content: center; align-items: flex-start; padding: 20px; min-height: 100vh; }
+    .layout-grid { display: grid; grid-template-columns: 340px 1fr; gap: 20px; width: 100%; max-width: 1180px; }
+    .card { background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 20px; }
+    h1 { font-size: 1.4rem; color: #1a252f; margin-bottom: 10px; }
+    .room-box { background: #eef2f5; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.8rem; margin-bottom: 15px; color: #0066ff; letter-spacing: 2px; }
+    #qrcode { display: flex; justify-content: center; margin-bottom: 15px; }
+    .timer-display { font-size: 2.2rem; font-weight: bold; color: #e74c3c; font-family: monospace; }
+    .badge { background-color: #27ae60; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; float: right; }
+    .badge.difficult { background-color: #e74c3c; }
+    .badge.moderate { background-color: #f39c12; }
+    .badge.easy { background-color: #27ae60; }
+    .question-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px; min-height: 160px; }
+    .question-text { font-size: 1.1rem; font-weight: 600; color: #2c3e50; margin-bottom: 15px; }
+    .options-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .option-item { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 14px; font-size: 0.95rem; }
+    .identification-input { width: 100%; padding: 12px; font-size: 1rem; border: 1px solid #cbd5e1; border-radius: 6px; background-color: #f1f5f9; color: #64748b; }
+    .controls { display: flex; gap: 15px; align-items: center; margin-top: 15px; }
+    .btn { padding: 10px 18px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s ease; }
+    .btn-timer { background: #e67e22; color: white; }
+    .btn-timer:hover { background: #d35400; }
+    .btn-export { background: #10b981; color: white; width: 100%; margin-top: 15px; padding: 10px; font-size: 0.9rem; }
+    .btn-export:hover { background: #059669; }
+    .btn-nav { background: #0066ff; color: white; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; margin-right: 4px; margin-bottom: 4px; border: none; cursor: pointer; }
+    .btn-nav.active { background: #0044cc; box-shadow: 0 0 0 2px #002288; }
+    .nav-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 15px; }
+    .counters { background: #eef2f5; padding: 10px 15px; border-radius: 6px; font-size: 0.9rem; font-weight: 600; margin-bottom: 15px; display: flex; gap: 15px; }
+    .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .leaderboard-table th, .leaderboard-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 0.85rem; }
+    .status-correct { color: #16a34a; font-weight: bold; }
+    .status-wrong { color: #dc2626; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="layout-grid">
+    <div class="card">
+      <h2 style="font-size:1.1rem; text-align:center; margin-bottom:10px;">ROOM CODE</h2>
+      <div id="room-code-display" class="room-box">----</div>
+      <div id="qrcode"></div>
+      <p style="font-size:0.75rem; text-align:center; color:#64748b; margin-bottom:15px;">Scan to join via <b>player.html</b></p>
+      
+      <h3 style="font-size: 1rem; border-bottom:2px solid #0066ff; padding-bottom:5px; margin-top:10px;">🏆 Leaderboard & Responses</h3>
+      <table class="leaderboard-table">
+        <thead>
+          <tr style="color:#64748b;">
+            <th>Player</th>
+            <th>Score</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body">
+          <tr><td colspan="3" style="text-align:center; color:#94a3b8; padding:15px 0;">Waiting for players...</td></tr>
+        </tbody>
+      </table>
+
+      <button id="export-csv-btn" class="btn btn-export">📥 Export Scores (CSV)</button>
+    </div>
+
+    <div class="card">
+      <h1>Grade 11 Science Quiz Bee Controller</h1>
+      
+      <div style="margin: 15px 0;">
+        <label><b>Active Question Set:</b></label><br>
+        <select id="set-select" style="padding: 6px 12px; border-radius:6px; margin-top:5px; font-weight:600;">
+          <option value="1">Question Set A</option>
+          <option value="2">Question Set B</option>
+          <option value="3">Question Set C</option>
+        </select>
+      </div>
+
+      <div class="counters">
+        <span>🟢 Easy: <span id="easy-count">0</span></span>
+        <span>🟡 Moderate: <span id="mod-count">0</span></span>
+        <span>🔴 Difficult: <span id="diff-count">0</span></span>
+      </div>
+
+      <div class="question-card">
+        <span id="round-badge" class="badge easy">EASY</span>
+        <div id="question-header" style="font-size:0.85rem; font-weight:bold; color:#64748b; margin-bottom:5px;">Select a question below</div>
+        <div id="question-text" class="question-text">--</div>
+        <div id="options-container" class="options-grid"></div>
+      </div>
+
+      <p style="font-size:0.85rem; font-weight:bold; margin-bottom:8px;">Dispatch Question to All Players:</p>
+      <div id="nav-buttons" class="nav-grid"></div>
+
+      <div class="controls">
+        <button id="start-timer-btn" class="btn btn-timer">⏱️ Start Timer & Allow Answers</button>
+        <div id="timer-display" class="timer-display">--.--s</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="questions.js"></script>
+  <script>
+    const roomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+    localStorage.setItem('qb_host_room', roomCode);
+    localStorage.removeItem('qb_host_players'); 
+    document.getElementById('room-code-display').textContent = roomCode;
+
+    let currentSetKey = 1;
+    let selectedIndex = 0;
+    let connectedPlayers = {};
+    let currentQuestions = rawQuestionBank[currentSetKey] || rawQuestionBank[1];
+    
+    let timerAnimFrame = null;
+    let activeEndTime = null;
+    let submittedAnswers = {}; 
+    let playerResults = {};
+    let phoneConnections = [];
+
+    document.getElementById('set-select').value = currentSetKey;
+
+    const joinUrl = new URL(`../player.html?room=${roomCode}`, window.location.href).href;
+    new QRCode(document.getElementById('qrcode'), { text: joinUrl, width: 120, height: 120 });
+
+    const channel = new BroadcastChannel(`qb_channel_${roomCode}`);
+    channel.onmessage = (e) => handleIncomingMessage(e.data);
+
+    const peer = new Peer(`qb_host_${roomCode}`);
+    peer.on('connection', (conn) => {
+      phoneConnections.push(conn);
+      conn.on('data', (data) => handleIncomingMessage(data));
+      conn.on('open', () => dispatchCurrentQuestion());
+    });
+
+    function broadcastPayload(payload) {
+      channel.postMessage(payload);
+      phoneConnections.forEach(conn => {
+        if (conn.open) conn.send(payload);
+      });
+    }
+
+    function handleIncomingMessage(msg) {
+      if (msg.type === 'PLAYER_JOIN') {
+        const pid = msg.player.uuid;
+        connectedPlayers[pid] = {
+          uuid: pid,
+          name: msg.player.name,
+          section: msg.player.section,
+          score: connectedPlayers[pid] ? connectedPlayers[pid].score : 0,
+          categoryScores: connectedPlayers[pid] ? connectedPlayers[pid].categoryScores : {
+            "Easy Round": 0,
+            "Moderate Round": 0,
+            "Difficult Round": 0,
+            "Clincher Round": 0
+          }
+        };
+        localStorage.setItem('qb_host_players', JSON.stringify(connectedPlayers));
+        updateLeaderboardUI();
+        dispatchCurrentQuestion();
+      } else if (msg.type === 'SUBMIT_ANSWER') {
+        submittedAnswers[msg.uuid] = msg.answer;
+      }
+    }
+
+    const setSelect = document.getElementById('set-select');
+    const qTextEl = document.getElementById('question-text');
+    const qHeaderEl = document.getElementById('question-header');
+    const badgeEl = document.getElementById('round-badge');
+    const optionsContainer = document.getElementById('options-container');
+    const navButtonsEl = document.getElementById('nav-buttons');
+    const timerDisplay = document.getElementById('timer-display');
+    const startTimerBtn = document.getElementById('start-timer-btn');
+    const leaderboardBody = document.getElementById('leaderboard-body');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+
+    function updateLeaderboardUI() {
+      leaderboardBody.innerHTML = '';
+      const list = Object.values(connectedPlayers);
+      if (list.length === 0) {
+        leaderboardBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#94a3b8; padding:15px 0;">Waiting for players...</td></tr>';
+        return;
+      }
+      list.sort((a, b) => b.score - a.score).forEach(p => {
+        const resText = playerResults[p.uuid] 
+          ? (playerResults[p.uuid].isCorrect ? '<span class="status-correct">✓ Correct</span>' : '<span class="status-wrong">✗ Wrong</span>')
+          : '<span style="color:#94a3b8;">--</span>';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><b>${p.name}</b><br><small style="color:#64748b;">${p.section}</small></td><td><b style="color:#0066ff;">${p.score} pts</b></td><td>${resText}</td>`;
+        leaderboardBody.appendChild(tr);
+      });
+    }
+
+    function updateCounters() {
+      document.getElementById('easy-count').textContent = currentQuestions.filter(q => q.round === "Easy Round").length;
+      document.getElementById('mod-count').textContent = currentQuestions.filter(q => q.round === "Moderate Round").length;
+      document.getElementById('diff-count').textContent = currentQuestions.filter(q => q.round === "Difficult Round").length;
+    }
+
+    function renderNavButtons() {
+      navButtonsEl.innerHTML = '';
+      currentQuestions.forEach((q, idx) => {
+        const btn = document.createElement('button');
+        let code = 'E';
+        if (q.round === "Moderate Round") code = 'M';
+        if (q.round === "Difficult Round") code = 'D';
+        if (q.round === "Clincher Round") code = 'C';
+
+        btn.className = `btn-nav ${idx === selectedIndex ? 'active' : ''}`;
+        btn.textContent = `Q${idx + 1} (${code})`;
+        btn.addEventListener('click', () => {
+          selectedIndex = idx;
+          renderNavButtons();
+          renderQuestion(selectedIndex);
+        });
+        navButtonsEl.appendChild(btn);
+      });
+    }
+
+    function dispatchCurrentQuestion() {
+      const q = currentQuestions[selectedIndex];
+      if (!q) return;
+
+      broadcastPayload({
+        type: 'QUESTION_DISPATCH',
+        question: q,
+        leaderboard: connectedPlayers
+      });
+    }
+
+    function evaluateRoundAnswers() {
+      const q = currentQuestions[selectedIndex];
+      if (!q) return;
+
+      playerResults = {};
+      const roundCategory = q.round || "Easy Round";
+
+      Object.keys(connectedPlayers).forEach(pid => {
+        const ans = submittedAnswers[pid];
+        let isCorrect = false;
+
+        if (ans !== undefined && ans !== null) {
+          if (q.type === 'mc') {
+            isCorrect = Number(ans) === Number(q.answer);
+          } else {
+            isCorrect = String(ans).trim().toLowerCase() === String(q.answer).trim().toLowerCase();
+          }
+        }
+
+        if (isCorrect) {
+          const pts = (q.points || 1);
+          connectedPlayers[pid].score += pts;
+          if (!connectedPlayers[pid].categoryScores[roundCategory]) {
+            connectedPlayers[pid].categoryScores[roundCategory] = 0;
+          }
+          connectedPlayers[pid].categoryScores[roundCategory] += pts;
+        }
+
+        playerResults[pid] = {
+          isCorrect: isCorrect,
+          submitted: ans
+        };
+      });
+
+      localStorage.setItem('qb_host_players', JSON.stringify(connectedPlayers));
+      updateLeaderboardUI();
+
+      broadcastPayload({
+        type: 'TIME_UP',
+        correctAnswer: q.answer,
+        questionType: q.type,
+        leaderboard: connectedPlayers
+      });
+    }
+
+    function renderQuestion(index) {
+      if (timerAnimFrame) cancelAnimationFrame(timerAnimFrame);
+      submittedAnswers = {}; 
+      playerResults = {};
+      updateLeaderboardUI();
+
+      const q = currentQuestions[index];
+      if (!q) return;
+
+      const duration = q.timer || 15;
+      qHeaderEl.textContent = `SET_${currentSetKey} — Question ${index + 1} of ${currentQuestions.length}`;
+      qTextEl.textContent = q.question;
+      timerDisplay.textContent = `${duration.toFixed(2)}s`;
+
+      badgeEl.textContent = q.round.replace(" Round", "").toUpperCase();
+      badgeEl.className = 'badge ' + (q.round === "Difficult Round" ? 'difficult' : (q.round === "Moderate Round" ? 'moderate' : 'easy'));
+
+      optionsContainer.innerHTML = '';
+
+      if (q.type === "mc" && q.options) {
+        q.options.forEach((opt, i) => {
+          const div = document.createElement('div');
+          div.className = 'option-item';
+          div.textContent = `${String.fromCharCode(65 + i)}. ${opt}`;
+          optionsContainer.appendChild(div);
+        });
+      } else if (q.type === "text" || !q.options) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'identification-input';
+        input.disabled = true;
+        input.placeholder = 'Students will type answer when timer starts...';
+        optionsContainer.appendChild(input);
+      }
+
+      dispatchCurrentQuestion();
+    }
+
+    startTimerBtn.addEventListener('click', () => {
+      const q = currentQuestions[selectedIndex];
+      if (!q) return;
+
+      const durationMs = (q.timer || 15) * 1000;
+      activeEndTime = Date.now() + durationMs;
+      submittedAnswers = {};
+      playerResults = {};
+      updateLeaderboardUI();
+
+      const textInput = optionsContainer.querySelector('input');
+      if (textInput) textInput.disabled = false;
+
+      broadcastPayload({
+        type: 'START_TIMER',
+        question: q,
+        endTime: activeEndTime,
+        duration: q.timer || 15
+      });
+
+      if (timerAnimFrame) cancelAnimationFrame(timerAnimFrame);
+
+      function updateHostTimer() {
+        const remaining = Math.max(0, activeEndTime - Date.now());
+        timerDisplay.textContent = `${(remaining / 1000).toFixed(2)}s`;
+
+        if (remaining > 0) {
+          timerAnimFrame = requestAnimationFrame(updateHostTimer);
+        } else {
+          timerDisplay.textContent = "0.00s (TIME'S UP)";
+          if (textInput) textInput.disabled = true;
+          evaluateRoundAnswers();
+        }
+      }
+
+      timerAnimFrame = requestAnimationFrame(updateHostTimer);
+    });
+
+    setSelect.addEventListener('change', (e) => {
+      currentSetKey = e.target.value;
+      currentQuestions = rawQuestionBank[currentSetKey] || rawQuestionBank[1];
+      selectedIndex = 0;
+      updateCounters();
+      renderNavButtons();
+      renderQuestion(selectedIndex);
+    });
+
+    // CSV Export Functionality broken down by Round Categories
+    exportCsvBtn.addEventListener('click', () => {
+      const players = Object.values(connectedPlayers);
+      if (players.length === 0) {
+        alert("No players available to export.");
+        return;
+      }
+
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Full Name,Section,Total Score,Easy Round,Moderate Round,Difficult Round,Clincher Round\n";
+
+      players.forEach(p => {
+        const easy = p.categoryScores ? (p.categoryScores["Easy Round"] || 0) : 0;
+        const mod = p.categoryScores ? (p.categoryScores["Moderate Round"] || 0) : 0;
+        const diff = p.categoryScores ? (p.categoryScores["Difficult Round"] || 0) : 0;
+        const clincher = p.categoryScores ? (p.categoryScores["Clincher Round"] || 0) : 0;
+
+        const row = `"${p.name}","${p.section}",${p.score},${easy},${mod},${diff},${clincher}`;
+        csvContent += row + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `QuizBee_Scores_Room_${roomCode}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    updateLeaderboardUI();
+    updateCounters();
+    renderNavButtons();
+    renderQuestion(selectedIndex);
+  </script>
+</body>
+</html>

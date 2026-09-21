@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,readFileSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {newGame,join,submit,action,view,expire,rankings} from '../game.mjs';
+import {createQuiz,banks,onSubnet,privateIP} from '../server.mjs';
+const fixture=()=>{const g=newGame('g7',banks.g7,'Test');const p=join(g,'Ada','A');return {g,p};};
+test('new sessions retain all source questions and point values',()=>{assert.equal(banks.g7.questions.length,7);for(const key of ['g11-1','g11-2','g11-3'])assert.equal(banks[key].questions.length,30);});
+test('players cannot read a question before start, or answer keys and future questions',()=>{const {g,p}=fixture();assert.equal(view(g,p).question,null);action(g,'start');const v=view(g,p);assert.equal(v.question.answer,undefined);assert.equal(v.questions,undefined);assert.equal(v.players,undefined);assert.equal(JSON.stringify(v).includes(p.token),false);assert.equal(view(g,null,true).question.answer,undefined);});
+test('deadline, stale question and duplicate submissions are server-enforced',()=>{const {g,p}=fixture();action(g,'start',null,1000);assert.throws(()=>submit(g,p,'old',2,1001));assert.throws(()=>submit(g,p,g.turn,2,11000));assert.throws(()=>submit(g,p,g.turn,9,1001));submit(g,p,g.turn,2,1001);assert.throws(()=>submit(g,p,g.turn,1,1002));action(g,'reveal');assert.equal(rankings(g)[0].score,1);action(g,'reveal');assert.equal(rankings(g)[0].score,1);});
+test('paused timers disallow answers and expiry closes without leaking correct answer',()=>{const {g,p}=fixture();action(g,'start',null,1000);action(g,'pause',null,2000);assert.throws(()=>submit(g,p,g.turn,2,2001));assert.equal(g.remaining,9000);action(g,'start',null,3000);assert.equal(g.end,12000);expire(g,12000);assert.equal(g.phase,'closed');assert.equal(view(g,p).question.answer,undefined);});
+test('lobby locks on start, duplicate identities are rejected, tokens are distinct',()=>{const {g}=fixture();assert.throws(()=>join(g,'Ada','A'));const p=join(g,'Bea','A');assert.notEqual(g.players[0].token,p.token);action(g,'start');assert.throws(()=>join(g,'Cal','A'));});
+test('replaying a question replaces its prior scores and rejects old turn IDs',()=>{const {g,p}=fixture();action(g,'start');const old=g.turn;submit(g,p,old,2);action(g,'reveal');action(g,'select',0);action(g,'start');assert.throws(()=>submit(g,p,old,2));submit(g,p,g.turn,0);action(g,'reveal');assert.equal(rankings(g)[0].score,0);});
+test('identification grading, rankings, and independent sessions',()=>{const {g,p}=fixture();const p2=join(g,'Bea','A');action(g,'select',4);action(g,'start');submit(g,p,g.turn,' ASEXUAL REPRODUCTION ');submit(g,p2,g.turn,'asexual reproduction');action(g,'reveal');assert.deepEqual(rankings(g).map(p=>[p.rank,p.score]),[[1,2],[1,2]]);assert.deepEqual(newGame('g7',banks.g7,'New').players,[]);});
+test('network gate accepts only the configured private subnet',()=>{assert.equal(privateIP('8.8.8.8'),false);assert.equal(privateIP('192.168.137.1'),true);assert.equal(onSubnet('192.168.137.2','192.168.137.1','255.255.255.0'),true);assert.equal(onSubnet('192.168.1.2','192.168.137.1','255.255.255.0'),false);});
+test('HTTP integration: protected host, restricted files, server scoring, resume and export',async()=>{
+ const dataDir=mkdtempSync(path.join(os.tmpdir(),'quiz-hotspot-test-'));
+ let app=createQuiz({bind:'127.0.0.2',mask:'255.0.0.0',port:0,dataDir,testing:true});await app.start();
+ let admin=`http://127.0.0.1:${app.adminServer.address().port}`,lan=`http://127.0.0.2:${app.lanServer.address().port}`;
+ const request=async(base,url,token,data,extra={})=>fetch(base+url,{method:data===undefined?'GET':'POST',headers:{...(token?{Authorization:`Bearer ${token}`} :{}),...(data===undefined?{}:{'Content-Type':'application/json'}),...extra},body:data===undefined?undefined:JSON.stringify(data)});
+ try{
+  assert.equal((await request(lan,'/api/host/state',app.token)).status,403);
+  assert.equal((await request(admin,'/api/host/state','wrong')).status,403);
+  for(const file of ['/host.html','/host.js','/banks.json','/../grade7/questions.js','/grade11/questions.js','/.git/config','/data/current.json'])assert.equal((await request(lan,file)).status,404,file);
+  assert.equal((await request(admin,'/api/host/create',app.token,{set:'g7',name:'Session'},{Origin:'http://evil.example'})).status,403);
+  assert.equal((await request(admin,'/api/host/create',app.token,{set:'g7',name:'Session'})).status,200);
+  const {token}=await(await request(lan,'/api/join',null,{name:'Player <b>',section:'A'})).json();
+  assert.ok(token);assert.equal((await(await request(lan,'/api/state',token)).json()).question,null);
+  await request(admin,'/api/host/action',app.token,{type:'start'});
+  const state=await(await request(lan,'/api/state',token)).json();assert.equal(state.question.answer,undefined);
+  assert.equal((await request(lan,'/api/answer',token,{turn:state.turn,answer:2})).status,200);
+  assert.equal((await request(lan,'/api/answer',token,{turn:state.turn,answer:2})).status,400);
+  await request(admin,'/api/host/action',app.token,{type:'reveal'});
+  let v=await(await request(lan,'/api/state',token)).json();assert.equal(v.me.points,1);assert.match(v.question.answer,/Iris diaphragm/);
+  const csv=await(await request(admin,'/api/host/export',app.token)).text();assert.match(csv,/Player <b>/);
+  await app.close();app=createQuiz({bind:'127.0.0.2',mask:'255.0.0.0',port:0,dataDir,testing:true});await app.start();
+  lan=`http://127.0.0.2:${app.lanServer.address().port}`;v=await(await request(lan,'/api/state',token)).json();assert.equal(v.me.points,1);assert.equal(v.leaderboard[0].score,1);
+ }finally{await app.close();}
+});
+test('offline assets have no external resource dependencies',()=>{for(const file of ['host.html','player.html','host.js','player.js','common.js','style.css']){const text=readFileSync(new URL('../public/'+file,import.meta.url),'utf8');assert.doesNotMatch(text,/(?:src|href)=["']https?:\/\//);assert.doesNotMatch(text,/fetch\(["']https?:\/\//);}});

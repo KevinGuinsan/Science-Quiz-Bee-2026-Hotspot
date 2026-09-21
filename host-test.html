@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MS Word Question Parser Sandbox</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; padding: 20px; background: #f4f6f9; color: #333; }
+    .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; color: #007bff; }
+    textarea { width: 100%; height: 220px; padding: 12px; border: 2px solid #ccc; border-radius: 8px; font-family: monospace; font-size: 0.95rem; }
+    button { padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; margin: 15px 0; }
+    button:hover { background: #218838; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 0.9rem; }
+    .instructions { background: #eef2f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h2>📝 MS Word Question Parser</h2>
+    <div class="instructions">
+      <strong>Format instructions for MS Word input:</strong><br/>
+      Each item should have a question line, options A–D, a Category tag (EASY, MODERATE, or DIFFICULT), and an Answer line.
+      <br/><em>Example format:</em>
+      <pre style="margin: 8px 0 0; background: #fff; color: #333; border: 1px solid #ddd;">
+1. Which organ system is responsible for pumping blood throughout the body?
+Category: EASY
+A. Digestive System
+B. Circulatory System
+C. Respiratory System
+D. Nervous System
+Answer: B</pre>
+    </div>
+
+    <label for="wordInput"><strong>Paste MS Word Text Here:</strong></label>
+    <textarea id="wordInput" placeholder="Paste your formatted questions here..."></textarea>
+
+    <button onclick="parseQuestions()">⚡ Convert to JS Dataset Format</button>
+
+    <h3>Generated JavaScript Output (`questions.js`)</h3>
+    <pre id="jsonOutput">// Formatted dataset will appear here after clicking convert...</pre>
+  </div>
+
+  <script>
+    function parseQuestions() {
+      const rawText = document.getElementById("wordInput").value;
+      if (!rawText.trim()) return alert("Please paste text from MS Word first.");
+
+      const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      const dataset = [];
+      
+      let currentItem = null;
+
+      lines.forEach(line => {
+        // Detect item start (e.g., "1.", "1)", "Q1.")
+        if (/^\d+[\.\)]/i.test(line) || /^Q\d+[\.\)]/i.test(line)) {
+          if (currentItem && currentItem.question && currentItem.options.length === 4) {
+            dataset.push(currentItem);
+          }
+          currentItem = {
+            id: `q${String(dataset.length + 1).padStart(2, '0')}`,
+            category: "EASY", // Default category fallback
+            question: line.replace(/^\d+[\.\)]\s*/, '').replace(/^Q\d+[\.\)]\s*/, ''),
+            options: [],
+            correctAnswer: 0,
+            timeLimit: 15
+          };
+        } 
+        // Detect Category tag
+        else if (/^Category:\s*/i.test(line)) {
+          if (currentItem) {
+            const catStr = line.replace(/^Category:\s*/i, '').trim().toUpperCase();
+            if (["EASY", "MODERATE", "DIFFICULT"].includes(catStr)) {
+              currentItem.category = catStr;
+            }
+          }
+        }
+        // Detect Choices A-D
+        else if (/^[A-D][\.\)]\s*/i.test(line)) {
+          if (currentItem && currentItem.options.length < 4) {
+            currentItem.options.push(line.replace(/^[A-D][\.\)]\s*/i, ''));
+          }
+        } 
+        // Detect Answer Key line (e.g., "Answer: B" or "ANS: B")
+        else if (/^(Answer|ANS):\s*[A-D]/i.test(line)) {
+          if (currentItem) {
+            const match = line.match(/[A-D]/i);
+            if (match) {
+              const char = match[0].toUpperCase();
+              currentItem.correctAnswer = char.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1, etc.
+            }
+          }
+        }
+      });
+
+      // Push final item
+      if (currentItem && currentItem.question && currentItem.options.length === 4) {
+        dataset.push(currentItem);
+      }
+
+      if (dataset.length === 0) {
+        document.getElementById("jsonOutput").textContent = "// Could not parse valid questions. Please verify the input format matches the instructions.";
+        return;
+      }
+
+      const formattedJS = `const QUIZ_DATASET = ${JSON.stringify(dataset, null, 2)};`;
+      document.getElementById("jsonOutput").textContent = formattedJS;
+    }
+  </script>
+</body>
+</html>

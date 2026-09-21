@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz Bee Student Portal</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f6f9; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+    .card { background: #ffffff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 25px; width: 100%; max-width: 450px; }
+    h1 { font-size: 1.4rem; color: #1a252f; margin-bottom: 15px; text-align: center; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; color: #64748b; margin-bottom: 5px; }
+    input[type="text"] { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 1rem; }
+    input[disabled] { background-color: #f1f5f9; color: #64748b; }
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: 600; font-size: 1rem; cursor: pointer; background: #0066ff; color: white; transition: background 0.2s ease; }
+    .btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+    .badge { background-color: #3498db; color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; float: right; }
+    .timer-box { font-size: 1.8rem; font-weight: bold; color: #e74c3c; font-family: monospace; text-align: center; margin: 15px 0 5px 0; }
+    .options-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+    .option-btn { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; font-size: 1rem; text-align: left; cursor: not-allowed; opacity: 0.6; }
+    .option-btn.active { cursor: pointer; opacity: 1; }
+    .option-btn.selected { border: 2px solid #0066ff !important; background-color: #e0f2fe; }
+    .option-btn.correct { border: 2px solid #16a34a !important; background-color: #dcfce7 !important; color: #15803d; font-weight: bold; opacity: 1; }
+    .option-btn.wrong { border: 2px solid #dc2626 !important; background-color: #fee2e2 !important; color: #b91c1c; font-weight: bold; opacity: 1; }
+    .result-banner { text-align: center; font-weight: bold; margin-top: 12px; padding: 10px; border-radius: 6px; font-size: 1rem; display: none; }
+    .result-banner.correct { background-color: #dcfce7; color: #15803d; border: 1px solid #86efac; display: block; }
+    .result-banner.wrong { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; display: block; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div id="join-screen">
+      <h1>Join Quiz Bee Room</h1>
+      <form id="join-form">
+        <div class="form-group">
+          <label>ROOM CODE</label>
+          <input type="text" id="room-input" placeholder="e.g. ABCD" maxlength="6" required style="text-transform: uppercase; font-weight: bold; letter-spacing: 2px;">
+        </div>
+        <div class="form-group">
+          <label>FULL NAME</label>
+          <input type="text" id="name-input" placeholder="e.g. Juan Cruz" required>
+        </div>
+        <div class="form-group">
+          <label>SECTION</label>
+          <input type="text" id="section-input" placeholder="e.g. 11-STEM A" required>
+        </div>
+        <button type="submit" id="join-btn" class="btn">Join Game</button>
+      </form>
+    </div>
+
+    <div id="game-screen" style="display: none;">
+      <header style="border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px;">
+        <span id="player-tag" style="font-size: 0.85rem; font-weight: bold; color: #64748b;">Player</span>
+        <span id="score-tag" style="font-size: 0.85rem; font-weight: bold; color: #0066ff; margin-left: 10px;">Score: 0 pts</span>
+        <span id="round-tag" class="badge">EASY</span>
+      </header>
+
+      <div id="question-box" style="font-size: 1.1rem; font-weight: 600; color: #1e293b; margin-bottom: 10px;">
+        Loading active question...
+      </div>
+
+      <div id="timer-display" class="timer-box">--.--s</div>
+      <div id="result-banner" class="result-banner"></div>
+
+      <div id="input-container" class="options-grid"></div>
+    </div>
+  </div>
+
+  <script>
+    let playerUuid = localStorage.getItem('qb_pid') || ('pid_' + Math.random().toString(36).substring(2, 9));
+    localStorage.setItem('qb_pid', playerUuid);
+
+    let peer = null;
+    let conn = null;
+    let timerAnimFrame = null;
+    let mySelectedAnswer = null;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromUrl = urlParams.get('room');
+
+    const roomInput = document.getElementById('room-input');
+    const nameInput = document.getElementById('name-input');
+    const sectionInput = document.getElementById('section-input');
+    const joinForm = document.getElementById('join-form');
+    const joinScreen = document.getElementById('join-screen');
+    const gameScreen = document.getElementById('game-screen');
+    const questionBox = document.getElementById('question-box');
+    const timerDisplay = document.getElementById('timer-display');
+    const inputContainer = document.getElementById('input-container');
+    const resultBanner = document.getElementById('result-banner');
+    const scoreTag = document.getElementById('score-tag');
+
+    if (roomFromUrl) {
+      roomInput.value = roomFromUrl.toUpperCase();
+      roomInput.readOnly = true;
+      roomInput.style.backgroundColor = '#f1f5f9';
+    }
+
+    const savedInfo = localStorage.getItem('qb_player_info');
+    if (savedInfo) {
+      const playerData = JSON.parse(savedInfo);
+      if (roomFromUrl && roomFromUrl.toUpperCase() === playerData.room) {
+        connectToGame(playerData);
+      } else {
+        nameInput.value = playerData.name;
+        sectionInput.value = playerData.section;
+      }
+    }
+
+    joinForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const playerData = {
+        uuid: playerUuid,
+        room: roomInput.value.trim().toUpperCase(),
+        name: nameInput.value.trim(),
+        section: sectionInput.value.trim()
+      };
+      localStorage.setItem('qb_player_info', JSON.stringify(playerData));
+      connectToGame(playerData);
+    });
+
+    function connectToGame(playerData) {
+      joinScreen.style.display = 'none';
+      gameScreen.style.display = 'block';
+      document.getElementById('player-tag').textContent = `${playerData.name} (${playerData.section})`;
+
+      const localChannel = new BroadcastChannel(`qb_channel_${playerData.room}`);
+      localChannel.postMessage({ type: 'PLAYER_JOIN', player: playerData });
+      localChannel.onmessage = (event) => handleIncomingMessage(event.data);
+
+      peer = new Peer();
+      peer.on('open', () => {
+        conn = peer.connect(`qb_host_${playerData.room}`);
+        conn.on('open', () => {
+          conn.send({ type: 'PLAYER_JOIN', player: playerData });
+        });
+        conn.on('data', (data) => handleIncomingMessage(data));
+      });
+    }
+
+    function handleIncomingMessage(msg) {
+      if (msg.leaderboard && msg.leaderboard[playerUuid]) {
+        scoreTag.textContent = `Score: ${msg.leaderboard[playerUuid].score} pts`;
+      }
+
+      if (msg.type === 'QUESTION_DISPATCH') {
+        if (timerAnimFrame) cancelAnimationFrame(timerAnimFrame);
+        mySelectedAnswer = null;
+        resultBanner.style.display = 'none';
+        renderQuestion(msg.question);
+        timerDisplay.textContent = `${(msg.question.timer || 15).toFixed(2)}s`;
+      } else if (msg.type === 'START_TIMER') {
+        renderQuestion(msg.question);
+        startPlayerCountdown(msg.endTime);
+      } else if (msg.type === 'TIME_UP') {
+        showCorrectAndWrongMarkings(msg.correctAnswer);
+      }
+    }
+
+    function renderQuestion(q) {
+      if (!q) return;
+      document.getElementById('round-tag').textContent = q.round ? q.round.replace(" Round", "") : "QUESTION";
+      questionBox.textContent = q.question;
+      inputContainer.innerHTML = '';
+
+      if (q.type === 'mc' && q.options) {
+        q.options.forEach((opt, idx) => {
+          const btn = document.createElement('button');
+          btn.className = 'option-btn';
+          btn.textContent = `${String.fromCharCode(65 + idx)}. ${opt}`;
+          btn.disabled = true;
+          inputContainer.appendChild(btn);
+        });
+      } else if (q.type === 'text' || !q.options) {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'typed-answer';
+        input.placeholder = 'Wait for timer to start...';
+        input.disabled = true;
+
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'btn';
+        submitBtn.style.marginTop = '10px';
+        submitBtn.textContent = 'Submit Answer';
+        submitBtn.disabled = true;
+
+        inputContainer.appendChild(input);
+        inputContainer.appendChild(submitBtn);
+      }
+    }
+
+    function startPlayerCountdown(endTime) {
+      const optionBtns = inputContainer.querySelectorAll('.option-btn');
+      const textInput = document.getElementById('typed-answer');
+      const submitBtn = inputContainer.querySelector('.btn');
+
+      if (optionBtns.length > 0) {
+        optionBtns.forEach((btn, idx) => {
+          btn.disabled = false;
+          btn.classList.add('active');
+          btn.onclick = () => {
+            optionBtns.forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            mySelectedAnswer = idx;
+            submitResponse(idx);
+          };
+        });
+      } else if (textInput && submitBtn) {
+        textInput.disabled = false;
+        textInput.placeholder = 'Type your answer here...';
+        textInput.focus();
+        submitBtn.disabled = false;
+        submitBtn.onclick = () => {
+          mySelectedAnswer = textInput.value.trim();
+          submitResponse(mySelectedAnswer);
+          submitBtn.disabled = true;
+          textInput.disabled = true;
+        };
+      }
+
+      if (timerAnimFrame) cancelAnimationFrame(timerAnimFrame);
+
+      function updatePlayerTimer() {
+        const remaining = Math.max(0, endTime - Date.now());
+        timerDisplay.textContent = `${(remaining / 1000).toFixed(2)}s`;
+
+        if (remaining > 0) {
+          timerAnimFrame = requestAnimationFrame(updatePlayerTimer);
+        } else {
+          timerDisplay.textContent = "0.00s (TIME'S UP)";
+          optionBtns.forEach(b => { b.disabled = true; b.classList.remove('active'); });
+          if (textInput) textInput.disabled = true;
+          if (submitBtn) submitBtn.disabled = true;
+        }
+      }
+
+      timerAnimFrame = requestAnimationFrame(updatePlayerTimer);
+    }
+
+    function showCorrectAndWrongMarkings(correctAnswer) {
+      const optionBtns = inputContainer.querySelectorAll('.option-btn');
+      const textInput = document.getElementById('typed-answer');
+
+      if (optionBtns.length > 0) {
+        optionBtns.forEach((btn, idx) => {
+          btn.classList.remove('selected', 'active');
+          if (idx === Number(correctAnswer)) {
+            btn.classList.add('correct');
+          } else if (idx === Number(mySelectedAnswer)) {
+            btn.classList.add('wrong');
+          }
+        });
+
+        if (mySelectedAnswer !== null && Number(mySelectedAnswer) === Number(correctAnswer)) {
+          resultBanner.className = 'result-banner correct';
+          resultBanner.textContent = '✓ Correct Answer!';
+        } else {
+          resultBanner.className = 'result-banner wrong';
+          resultBanner.textContent = '✗ Incorrect Answer';
+        }
+      } else if (textInput) {
+        const cleanTyped = String(mySelectedAnswer || '').trim().toLowerCase();
+        const cleanCorrect = String(correctAnswer || '').trim().toLowerCase();
+
+        if (cleanTyped === cleanCorrect) {
+          textInput.style.border = '2px solid #16a34a';
+          textInput.style.backgroundColor = '#dcfce7';
+          resultBanner.className = 'result-banner correct';
+          resultBanner.textContent = '✓ Correct Answer!';
+        } else {
+          textInput.style.border = '2px solid #dc2626';
+          textInput.style.backgroundColor = '#fee2e2';
+          resultBanner.className = 'result-banner wrong';
+          resultBanner.textContent = `✗ Incorrect. Correct answer: ${correctAnswer}`;
+        }
+      }
+    }
+
+    function submitResponse(answer) {
+      const payload = { type: 'SUBMIT_ANSWER', uuid: playerUuid, answer: answer };
+      if (conn && conn.open) conn.send(payload);
+
+      const playerInfo = JSON.parse(localStorage.getItem('qb_player_info'));
+      const channel = new BroadcastChannel(`qb_channel_${playerInfo.room}`);
+      channel.postMessage(payload);
+    }
+  </script>
+</body>
+</html>

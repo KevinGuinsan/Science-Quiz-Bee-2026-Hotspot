@@ -1,0 +1,1 @@
+{"name":"science-quiz-bee-hotspot","private":true,"type":"module","scripts":{"start":"node hotspot/server.mjs","test":"node --test --test-isolation=none hotspot/tests/*.test.mjs"},"engines":{"node":">=22"}}
