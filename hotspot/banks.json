@@ -386,9 +386,9 @@
       },
       {
         "id": "22",
-        "question": "What detergent chemical additive causes algal blooms and oxygen depletion in rivers?",
+        "question": "It is the first thermosetting, fully synthetic plastic made from fossil fuels which was invented by Leo Baekeland in 1907.",
         "options": [],
-        "answer": "phosphate",
+        "answer": "Bakelite",
         "category": "DIFFICULT",
         "seconds": 30,
         "points": 5
@@ -413,9 +413,9 @@
       },
       {
         "id": "25",
-        "question": "What hollow hull design allows massive metal ships to float by increasing displaced water volume?",
+        "question": "What active ingredient typically found in lotion or toothpaste serves the function of retaining moisture and preventing the product to dry out?",
         "options": [],
-        "answer": "density",
+        "answer": "Humectant",
         "category": "DIFFICULT",
         "seconds": 30,
         "points": 5
@@ -459,9 +459,9 @@
       },
       {
         "id": "29",
-        "question": "What primary surfactant compound ingredient in soap molecules lifts nonpolar oil?",
+        "question": "What system uses a network of orbiting satellites to determine precise geographic location and time anywhere on Earth?",
         "options": [],
-        "answer": "fatty acid",
+        "answer": "GPS - Global Positioning System",
         "category": "CLINCHER",
         "seconds": 30,
         "points": 5

@@ -31,16 +31,16 @@ const rawQuestionBank = {
     
     // --- DIFFICULT ROUND (IDENTIFICATION FORMAT) ---
     { round: "Difficult Round", points: 5, timer: 30, type: "text", question: "What optical phenomenon allows light signals to travel inside fiber optic cables without escaping?", answer: "total internal reflection" },
-    { round: "Difficult Round", points: 5, timer: 30, type: "text", question: "What detergent chemical additive causes algal blooms and oxygen depletion in rivers?", answer: "phosphate" },
+    {"round":"Difficult Round","points":5,"timer":30,"type":"text","question":"It is the first thermosetting, fully synthetic plastic made from fossil fuels which was invented by Leo Baekeland in 1907.","answer":"Bakelite"},
     { round: "Difficult Round", points: 5, timer: 30, type: "text", question: "What rotational force causes an object to turn or rotate around a pivot or fulcrum?", answer: "torque" },
     { round: "Difficult Round", points: 5, timer: 30, type: "text", question: "What upward force is exerted by a fluid on an object placed in it according to Archimedes' principle?", answer: "buoyant force" },
-    { round: "Difficult Round", points: 5, timer: 30, type: "text", question: "What hollow hull design allows massive metal ships to float by increasing displaced water volume?", answer: "density" },
+    {"round":"Difficult Round","points":5,"timer":30,"type":"text","question":"What active ingredient typically found in lotion or toothpaste serves the function of retaining moisture and preventing the product to dry out?","answer":"Humectant"},
 
     // --- CLINCHER ROUND ---
     { round: "Clincher Round", points: 3, timer: 15, type: "mc", question: "Which simple machine wrapped around a cylinder converts rotational motion to linear force?", options: ["Wedge", "Screw", "Lever", "Pulley"], answer: 1 },
     { round: "Clincher Round", points: 5, timer: 30, type: "text", question: "What heating process eliminates pathogens in dairy products without boiling the liquid?", answer: "pasteurization" },
     { round: "Clincher Round", points: 1, timer: 10, type: "mc", question: "What circuit protection mechanism melts to interrupt excessive current flow?", options: ["Transformer", "Fuse", "Capacitor", "Resistor"], answer: 1 },
-    { round: "Clincher Round", points: 5, timer: 30, type: "text", question: "What primary surfactant compound ingredient in soap molecules lifts nonpolar oil?", answer: "fatty acid" },
+    {"round":"Clincher Round","points":5,"timer":30,"type":"text","question":"What system uses a network of orbiting satellites to determine precise geographic location and time anywhere on Earth?","answer":"GPS - Global Positioning System"},
     { round: "Clincher Round", points: 3, timer: 15, type: "mc", question: "Which wave interaction in noise-canceling headphones neutralizes incoming sound waves?", options: ["Constructive interference", "Destructive interference", "Refraction", "Diffraction"], answer: 1 }
   ],
   2: [

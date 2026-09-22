@@ -34,7 +34,7 @@ The server listens only on the selected IPv4 adapter plus a separate localhost h
 ## Scoring, reconnecting and saving
 
 - The laptop validates timing and scores. Player requests cannot fetch future questions, answer keys, the source question files, host controls, or the saved session file through the local server.
-- A question is not sent to players until it starts. The answer is sent only after reveal.
+- Players see the current question and its options before the timer starts, with answer controls disabled. Controls become selectable only while the timer is running. The correct answer is sent only after reveal.
 - The server accepts one final answer per player per question attempt and rejects stale, duplicate, invalid, paused, and late submissions. Identification answers ignore capitalization and surrounding whitespace, but otherwise must match the source answer.
 - Scores use each question's existing points. Ties share a rank. A replay replaces that question's old scores instead of adding them twice.
 - The active session is saved in `hotspot/data/current.json`. Creating a new session also archives the previous one in `hotspot/data/`. This folder is gitignored. It contains participant names and reconnect credentials: keep it on the host laptop and do not publish it.

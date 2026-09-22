@@ -13,7 +13,7 @@ function render(){
  $('text-label').hidden=!q||!!q.options.length;$('answer-form').hidden=!q||state.phase==='finished';
  const open=state.phase==='running'&&!state.me.submitted;
  document.querySelectorAll('#answer-form input,#answer-form button,#options button').forEach(n=>n.disabled=!open);
- $('submission').textContent=state.me.submitted?'Answer submitted.':state.phase==='closed'?'Time is up. No more answers accepted.':state.phase==='paused'?'Timer paused.':state.phase==='finished'?'Quiz finished.':open?'Choose your answer and submit before time runs out.':'';
+ $('submission').textContent=state.me.submitted?'Answer submitted.':state.phase==='closed'?'Time is up. No more answers accepted.':state.phase==='paused'?'Timer paused.':state.phase==='finished'?'Quiz finished.':state.phase==='waiting'?'Read the question. Wait for the host to start the timer before choosing an answer.':open?'Choose your answer and submit before time runs out.':'';
  if(state.me.submitted&&q?.options.length){document.querySelectorAll('#options button').forEach((n,i)=>n.classList.toggle('selected',i===state.me.answer));}
  if(state.me.submitted&&q&&!q.options.length)$('text-answer').value=state.me.answer;
  $('answer').hidden=!q?.answer;$('answer').textContent=q?.answer?`Correct answer: ${q.answer} · Your points: ${state.me.points??0}`:'';board(state.leaderboard);

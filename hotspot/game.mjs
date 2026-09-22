@@ -10,7 +10,7 @@ export function view(g,player=null,host=false){
  if(player){data.me={id:player.id,submitted:player.turn===g.turn,answer:player.turn===g.turn?player.answer:null,points:g.results[q.id]?.[player.id]??null};}
  if(host){data.submissions=g.players.filter(p=>p.turn===g.turn).map(p=>p.id);data.questions=g.questions.map((q,i)=>({index:i,category:q.category,scored:Object.hasOwn(g.results,q.id)}));}
  data.serverNow=Date.now();
- if(!host&&g.phase==='waiting')data.question=null;
+ // Players can preview the question and options; submit() enforces the timer.
  return data;
 }
 export function join(g,name,section){

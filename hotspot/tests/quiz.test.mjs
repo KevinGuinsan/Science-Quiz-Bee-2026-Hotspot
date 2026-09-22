@@ -7,7 +7,7 @@ import {newGame,join,submit,action,view,expire,rankings} from '../game.mjs';
 import {createQuiz,banks,onSubnet,privateIP} from '../server.mjs';
 const fixture=()=>{const g=newGame('g7',banks.g7,'Test');const p=join(g,'Ada','A');return {g,p};};
 test('new sessions retain all source questions and point values',()=>{assert.equal(banks.g7.questions.length,7);for(const key of ['g11-1','g11-2','g11-3'])assert.equal(banks[key].questions.length,30);});
-test('players cannot read a question before start, or answer keys and future questions',()=>{const {g,p}=fixture();assert.equal(view(g,p).question,null);action(g,'start');const v=view(g,p);assert.equal(v.question.answer,undefined);assert.equal(v.questions,undefined);assert.equal(v.players,undefined);assert.equal(JSON.stringify(v).includes(p.token),false);assert.equal(view(g,null,true).question.answer,undefined);});
+test('players preview current questions and options but never answer keys or future questions',()=>{const {g,p}=fixture();assert.equal(view(g,p).question.question,g.questions[0].question);assert.deepEqual(view(g,p).question.options,g.questions[0].options);assert.throws(()=>submit(g,p,g.turn,2));action(g,'start');const v=view(g,p);assert.equal(v.question.answer,undefined);assert.equal(v.questions,undefined);assert.equal(v.players,undefined);assert.equal(JSON.stringify(v).includes(p.token),false);assert.equal(view(g,null,true).question.answer,undefined);});
 test('deadline, stale question and duplicate submissions are server-enforced',()=>{const {g,p}=fixture();action(g,'start',null,1000);assert.throws(()=>submit(g,p,'old',2,1001));assert.throws(()=>submit(g,p,g.turn,2,11000));assert.throws(()=>submit(g,p,g.turn,9,1001));submit(g,p,g.turn,2,1001);assert.throws(()=>submit(g,p,g.turn,1,1002));action(g,'reveal');assert.equal(rankings(g)[0].score,1);action(g,'reveal');assert.equal(rankings(g)[0].score,1);});
 test('paused timers disallow answers and expiry closes without leaking correct answer',()=>{const {g,p}=fixture();action(g,'start',null,1000);action(g,'pause',null,2000);assert.throws(()=>submit(g,p,g.turn,2,2001));assert.equal(g.remaining,9000);action(g,'start',null,3000);assert.equal(g.end,12000);expire(g,12000);assert.equal(g.phase,'closed');assert.equal(view(g,p).question.answer,undefined);});
 test('lobby locks on start, duplicate identities are rejected, tokens are distinct',()=>{const {g}=fixture();assert.throws(()=>join(g,'Ada','A'));const p=join(g,'Bea','A');assert.notEqual(g.players[0].token,p.token);action(g,'start');assert.throws(()=>join(g,'Cal','A'));});
@@ -26,7 +26,7 @@ test('HTTP integration: protected host, restricted files, server scoring, resume
   assert.equal((await request(admin,'/api/host/create',app.token,{set:'g7',name:'Session'},{Origin:'http://evil.example'})).status,403);
   assert.equal((await request(admin,'/api/host/create',app.token,{set:'g7',name:'Session'})).status,200);
   const {token}=await(await request(lan,'/api/join',null,{name:'Player <b>',section:'A'})).json();
-  assert.ok(token);assert.equal((await(await request(lan,'/api/state',token)).json()).question,null);
+  assert.ok(token);const preview=await(await request(lan,'/api/state',token)).json();assert.equal(preview.question.question,banks.g7.questions[0].question);assert.deepEqual(preview.question.options,banks.g7.questions[0].options);assert.equal((await request(lan,'/api/answer',token,{turn:preview.turn,answer:2})).status,400);
   await request(admin,'/api/host/action',app.token,{type:'start'});
   const state=await(await request(lan,'/api/state',token)).json();assert.equal(state.question.answer,undefined);
   assert.equal((await request(lan,'/api/answer',token,{turn:state.turn,answer:2})).status,200);
@@ -39,3 +39,12 @@ test('HTTP integration: protected host, restricted files, server scoring, resume
  }finally{await app.close();}
 });
 test('offline assets have no external resource dependencies',()=>{for(const file of ['host.html','player.html','host.js','player.js','common.js','style.css']){const text=readFileSync(new URL('../public/'+file,import.meta.url),'utf8');assert.doesNotMatch(text,/(?:src|href)=["']https?:\/\//);assert.doesNotMatch(text,/fetch\(["']https?:\/\//);}});
+
+test('Grade 11 Set A revised identification answers receive the original points',()=>{
+ for(const [number,answer] of [[22,'Bakelite'],[25,'Humectant'],[29,'GPS - Global Positioning System']]){
+  const g=newGame('g11-1',banks['g11-1'],'Revised');const p=join(g,'Quizzer','A');
+  const q=g.questions[number-1];assert.equal(q.answer,answer);assert.deepEqual(q.options,[]);
+  action(g,'select',number-1);const preview=view(g,p);assert.equal(preview.question.question,q.question);assert.equal(preview.question.answer,undefined);
+  assert.throws(()=>submit(g,p,g.turn,answer));action(g,'start');submit(g,p,g.turn,answer);action(g,'reveal');assert.equal(rankings(g)[0].score,q.points);
+ }
+});
